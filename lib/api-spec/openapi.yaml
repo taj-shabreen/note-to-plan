@@ -1,0 +1,250 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /workspace/summary:
+    get:
+      operationId: getWorkspaceSummary
+      responses:
+        "200":
+          description: Workspace counts
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceSummary" }
+  /summary:
+    get:
+      operationId: getSummary
+      responses:
+        "200":
+          description: Backward-compatible workspace counts
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceSummary" }
+  /runs:
+    get:
+      operationId: listRuns
+      responses:
+        "200":
+          description: Saved runs newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Run" }
+    post:
+      operationId: createRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RunInput" }
+      responses:
+        "202":
+          description: Saved and queued, or existing identical request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
+        "409":
+          description: Conflicting request or active workspace run
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
+        "503":
+          description: Could not save run
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
+        "429":
+          description: Workspace submission rate limit reached
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
+  /runs/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getRun
+      responses:
+        "200":
+          description: Original notes and immutable output
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+  /runs/{id}/events:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getRunEvents
+      parameters:
+        - { name: after, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200":
+          description: Ordered persisted events after cursor
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventPage" }
+  /tasks:
+    get:
+      operationId: listTasks
+      responses:
+        "200":
+          description: Editable workspace tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Task" }
+  /tasks/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    patch:
+      operationId: updateTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskUpdate" }
+      responses:
+        "200":
+          description: Saved task
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+    delete:
+      operationId: deleteTask
+      responses:
+        "204": { description: Deleted without altering historical output }
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    TaskInput:
+      type: object
+      required: [title, priority, category, dueDate]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 240 }
+        priority: { type: string, enum: [High, Medium, Low] }
+        category: { type: string, minLength: 1, maxLength: 60 }
+        dueDate: { type: [string, "null"] }
+        explanation: { type: string }
+    Task:
+      allOf:
+        - $ref: "#/components/schemas/TaskInput"
+        - type: object
+          required: [id, runId, completed, createdAt, updatedAt]
+          properties:
+            id: { type: string }
+            runId: { type: string }
+            completed: { type: boolean }
+            createdAt: { type: string }
+            updatedAt: { type: string }
+    TaskUpdate:
+      type: object
+      properties:
+        title: { type: string, minLength: 1, maxLength: 240 }
+        priority: { type: string, enum: [High, Medium, Low] }
+        category: { type: string, minLength: 1, maxLength: 60 }
+        dueDate: { type: [string, "null"] }
+        completed: { type: boolean }
+    RunInput:
+      type: object
+      required: [notes, timezone, referenceDate, idempotencyKey]
+      properties:
+        notes: { type: string, minLength: 1, maxLength: 20000 }
+        timezone: { type: string, maxLength: 100 }
+        referenceDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        idempotencyKey: { type: string, minLength: 16, maxLength: 100 }
+        parentRunId: { type: string }
+    Run:
+      type: object
+      required: [id, notes, timezone, referenceDate, status, method, model, processorVersion, parentRunId, taskCount, createdAt, startedAt, finishedAt, durationMs, error, output]
+      properties:
+        id: { type: string }
+        notes: { type: string }
+        timezone: { type: string }
+        referenceDate: { type: string }
+        status: { type: string, enum: [queued, running, completed, fallback, no_tasks, failed] }
+        method: { type: string, enum: [pending, ai, fallback] }
+        model: { type: [string, "null"] }
+        processorVersion: { type: string }
+        parentRunId: { type: [string, "null"] }
+        taskCount: { type: integer }
+        createdAt: { type: string }
+        startedAt: { type: [string, "null"] }
+        finishedAt: { type: [string, "null"] }
+        durationMs: { type: [integer, "null"] }
+        error: { type: [string, "null"] }
+        output:
+          type: array
+          items: { $ref: "#/components/schemas/TaskInput" }
+    ExecutionEvent:
+      type: object
+      required: [seq, runId, stage, status, attempt, timestamp, durationMs, summary, details]
+      properties:
+        seq: { type: integer }
+        runId: { type: string }
+        stage: { type: string }
+        status: { type: string, enum: [started, succeeded, failed, retrying, skipped, interrupted] }
+        attempt: { type: integer }
+        timestamp: { type: string }
+        durationMs: { type: integer }
+        summary: { type: string }
+        details: { type: string }
+    EventPage:
+      type: object
+      required: [events, cursor, status]
+      properties:
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/ExecutionEvent" }
+        cursor: { type: integer }
+        status: { type: string }
+    WorkspaceSummary:
+      type: object
+      required: [totalTasks, completedTasks, highPriorityTasks, totalRuns, activeRunId]
+      properties:
+        totalTasks: { type: integer }
+        completedTasks: { type: integer }
+        highPriorityTasks: { type: integer }
+        totalRuns: { type: integer }
+        activeRunId: { type: [string, "null"] }
+        successRuns: { type: integer }
+        averageDurationMs: { type: integer }
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
