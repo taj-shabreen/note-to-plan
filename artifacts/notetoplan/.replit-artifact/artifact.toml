@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "NoteToPlan"
+description = "Turn messy notes into prioritized tasks with a truthful, live history of each processing operation."
+version = "1.0.0"
+id = "artifacts/notetoplan"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20402
+
+[services.development]
+run = "pnpm --filter @workspace/notetoplan run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/notetoplan", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/notetoplan/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20402"
+BASE_PATH = "/"
